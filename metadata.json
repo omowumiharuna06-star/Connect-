@@ -1,0 +1,5 @@
+{
+  "name": "Connect+ Professional Network",
+  "description": "A professional networking web application to connect with peers, share updates, and get AI-powered coaching for better communication, built with React, TypeScript, and Gemini.",
+  "requestFramePermissions": []
+}
