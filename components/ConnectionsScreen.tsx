@@ -1,8 +1,5 @@
-
-
 import React from 'react';
 import { User } from '../types';
-import { formatUserActivity } from '../utils';
 import Avatar from './Avatar';
 
 interface ConnectionsScreenProps {
@@ -24,7 +21,6 @@ const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({ connections, onOp
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
             <ul className="divide-y divide-gray-200">
             {connections.map((item) => {
-                const { text, isOnline } = formatUserActivity(item.lastActive);
                 return (
                     <li key={item.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition">
                         <div className="flex items-center flex-grow cursor-pointer min-w-0" onClick={() => onViewProfile(item)}>
@@ -32,12 +28,6 @@ const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({ connections, onOp
                             <div className="flex-grow min-w-0">
                                 <p className="font-bold text-gray-800 truncate">{item.name}</p>
                                 <p className="text-sm text-gray-600 truncate">{item.headline}</p>
-                                {text && (
-                                <div className="flex items-center mt-1">
-                                    {isOnline && <div className="w-2.5 h-2.5 bg-green-500 rounded-full mr-1.5 flex-shrink-0"></div>}
-                                    <p className={`text-xs ${isOnline ? 'text-green-600 font-semibold' : 'text-gray-500'}`}>{text}</p>
-                                </div>
-                                )}
                             </div>
                         </div>
                         <button

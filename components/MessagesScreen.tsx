@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, Message } from '../types';
 import { getChatKey } from '../utils';
+import * as api from '../services/apiService';
 import Avatar from './Avatar';
 
 interface MessagesScreenProps {
@@ -17,74 +18,62 @@ interface Conversation {
 
 const MessagesScreen: React.FC<MessagesScreenProps> = ({ currentUser, people, onOpenChat }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const loadConversations = useCallback(() => {
-    const foundConversations: Conversation[] = [];
-    
-    people.forEach(peer => {
-      if (peer.id === currentUser.id) return;
-
-      const chatKey = getChatKey(currentUser.id, peer.id);
-      const storedMessages = localStorage.getItem(chatKey);
-
-      if (storedMessages) {
-        try {
-            const messages: Message[] = JSON.parse(storedMessages);
-            if (messages.length > 0) {
-              const lastMessage = messages[messages.length - 1];
-              const lastReadKey = `connectplus_lastread_${chatKey}`;
-              const lastReadTimestamp = parseInt(localStorage.getItem(lastReadKey) || '0', 10);
-
-              // A conversation is unread if its last message is newer than the last time
-              // the user viewed it, AND the last message was not from the current user.
-              const isUnread = lastMessage.ts > lastReadTimestamp && lastMessage.from !== currentUser.name;
-              
-              foundConversations.push({
-                peer: peer,
-                lastMessage: lastMessage,
-                isUnread,
-              });
-            }
-        } catch(e) {
-            console.error("Failed to parse messages for key:", chatKey, e);
+  const loadConversations = useCallback(async () => {
+    try {
+      const convos = await api.fetchConversations(currentUser.id, currentUser.name, people);
+      setConversations(convo => {
+        // Basic check to avoid re-renders if nothing changed
+        if (JSON.stringify(convo) !== JSON.stringify(convos)) {
+          return convos;
         }
-      }
-    });
-
-    // Sort conversations by the most recent message
-    foundConversations.sort((a, b) => b.lastMessage.ts - a.lastMessage.ts);
-    
-    setConversations(foundConversations);
+        return convo;
+      });
+    } catch(e) {
+      console.error("Failed to load conversations:", e);
+    } finally {
+      setIsLoading(false);
+    }
   }, [currentUser, people]);
 
   useEffect(() => {
-    loadConversations(); // Initial load
-
-    // Listen for storage changes to update conversations in real-time (e.g., from other tabs)
-    const handleStorageChange = (event: StorageEvent) => {
-        if (event.key && (event.key.startsWith('connectplus_chat_') || event.key.startsWith('connectplus_lastread_'))) {
-            loadConversations();
-        }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
+    loadConversations();
+    // Also poll for updates to the conversation list itself (e.g., new chats started)
+    const interval = setInterval(loadConversations, 5000);
+    return () => clearInterval(interval);
   }, [loadConversations]);
 
 
-  const handleDeleteConversation = (peerToDelete: User) => {
+  const handleDeleteConversation = async (peerToDelete: User) => {
     const isConfirmed = window.confirm(
       `Are you sure you want to delete your conversation with ${peerToDelete.name}? This action cannot be undone.`
     );
 
     if (isConfirmed) {
-      const chatKey = getChatKey(currentUser.id, peerToDelete.id);
-      localStorage.removeItem(chatKey);
+      const originalConversations = [...conversations];
       setConversations(prev => prev.filter(c => c.peer.id !== peerToDelete.id));
+      try {
+        const chatKey = getChatKey(currentUser.id, peerToDelete.id);
+        await api.deleteConversation(chatKey);
+      } catch (e) {
+        console.error("Failed to delete conversation:", e);
+        setConversations(originalConversations);
+        alert("Error: could not delete conversation.");
+      }
     }
   };
+
+  if (isLoading) {
+      return (
+        <div className="flex justify-center items-center h-64">
+          <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+      );
+  }
 
   return (
     <div className="space-y-6">

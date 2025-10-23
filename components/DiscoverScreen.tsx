@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { User, Tribe } from '../types';
 import Avatar from './Avatar';
@@ -11,9 +9,10 @@ interface DiscoverScreenProps {
   onConnect: (person: User) => void;
   connections: User[];
   onViewProfile: (person: User) => void;
+  onOpenChat: (person: User) => void;
 }
 
-const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ currentUser, people, tribes, onConnect, connections, onViewProfile }) => {
+const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ currentUser, people, tribes, onConnect, connections, onViewProfile, onOpenChat }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [recommendations, setRecommendations] = useState<User[]>([]);
   
@@ -96,15 +95,23 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ currentUser, people, tr
                     >{item.name}</p>
                     <p className="text-sm text-gray-600 ">{item.headline}</p>
                   </div>
-                  <button
-                    onClick={() => onConnect(item)}
-                    disabled={isConnected(item.id)}
-                    className="w-full mt-auto px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition disabled:cursor-not-allowed
-                               bg-blue-600 text-white hover:bg-blue-700 
-                               disabled:bg-gray-300 disabled:text-gray-500"
-                  >
-                    {isConnected(item.id) ? 'Connected' : 'Connect'}
-                  </button>
+                  <div className="w-full mt-auto space-y-2">
+                    <button
+                        onClick={() => onOpenChat(item)}
+                        className="w-full px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition bg-green-500 text-white hover:bg-green-600"
+                    >
+                        Message
+                    </button>
+                    <button
+                        onClick={() => onConnect(item)}
+                        disabled={isConnected(item.id)}
+                        className="w-full px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition disabled:cursor-not-allowed
+                                bg-blue-600 text-white hover:bg-blue-700 
+                                disabled:bg-gray-300 disabled:text-gray-500"
+                    >
+                        {isConnected(item.id) ? 'Connected' : 'Connect'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -142,15 +149,23 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ currentUser, people, tr
                         <p className="text-xs text-gray-500 mt-1">Intent: <span className="font-medium">{item.intent}</span></p>
                       </div>
                   </div>
-                  <button
-                    onClick={() => onConnect(item)}
-                    disabled={isConnected(item.id)}
-                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition disabled:cursor-not-allowed ml-4
-                              bg-blue-600 text-white hover:bg-blue-700 
-                              disabled:bg-gray-300 disabled:text-gray-500"
-                  >
-                    {isConnected(item.id) ? 'Connected' : 'Connect'}
-                  </button>
+                  <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
+                    <button
+                        onClick={() => onOpenChat(item)}
+                        className="px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition bg-green-500 text-white hover:bg-green-600"
+                    >
+                        Message
+                    </button>
+                    <button
+                        onClick={() => onConnect(item)}
+                        disabled={isConnected(item.id)}
+                        className="px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition disabled:cursor-not-allowed
+                                  bg-blue-600 text-white hover:bg-blue-700 
+                                  disabled:bg-gray-300 disabled:text-gray-500"
+                    >
+                        {isConnected(item.id) ? 'Connected' : 'Connect'}
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (

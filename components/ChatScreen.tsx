@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { User, Message } from '../types';
-import { uid, getChatKey, getTypingKey, formatUserActivity } from '../utils';
+import { uid, getChatKey } from '../utils';
+import * as api from '../services/apiService';
 import Avatar from './Avatar';
 
 interface ChatScreenProps {
@@ -12,108 +13,61 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ peer, currentUser }) => {
   const chatKey = getChatKey(currentUser.id, peer.id);
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [text, setText] = useState('');
-  const [isPeerTyping, setIsPeerTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<number | null>(null);
-  const { text: activityText, isOnline } = formatUserActivity(peer.lastActive);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
   
-  // Load messages from localStorage or create an initial conversation
-  const loadMessages = useCallback(() => {
-    const storedMessages = localStorage.getItem(chatKey);
-    if (storedMessages) {
-      setMsgs(JSON.parse(storedMessages));
-    } else {
-      const initialMsg: Message = { id: uid('m'), from: peer.name, text: 'Hey — nice to connect!', ts: Date.now() };
-      const initialHistory = [initialMsg];
-      setMsgs(initialHistory);
-      localStorage.setItem(chatKey, JSON.stringify(initialHistory));
+  const loadMessages = useCallback(async () => {
+    try {
+      const messages = await api.fetchMessages(chatKey, peer.name);
+      setMsgs(messages);
+    } catch (e) {
+      console.error("Failed to load messages", e);
+    } finally {
+      setIsLoading(false);
     }
   }, [chatKey, peer.name]);
 
-  // Effect to load messages on component mount and mark as read
   useEffect(() => {
     loadMessages();
-    const lastReadKey = `connectplus_lastread_${chatKey}`;
-    localStorage.setItem(lastReadKey, Date.now().toString());
-  }, [loadMessages, chatKey]);
+  }, [loadMessages]);
 
-  // Effect to listen for real-time updates from other tabs/windows and keep read status current
+  // Polling for new messages
   useEffect(() => {
-    const handleStorageChange = (event: StorageEvent) => {
-      // Check if the change is for our current chat window
-      if (event.key === chatKey && event.newValue) {
-         setMsgs(JSON.parse(event.newValue));
-         // If a new message arrives from another tab, this tab is now up-to-date
-         const lastReadKey = `connectplus_lastread_${chatKey}`;
-         localStorage.setItem(lastReadKey, Date.now().toString());
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    // Clean up the event listener on component unmount
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, [chatKey]);
-
-  // Effect to listen for peer typing status
-  useEffect(() => {
-    const peerTypingKey = getTypingKey(chatKey, peer.id);
-    const interval = setInterval(() => {
-      const typingTimestamp = localStorage.getItem(peerTypingKey);
-      if (typingTimestamp && Date.now() - parseInt(typingTimestamp, 10) < 3000) {
-        setIsPeerTyping(true);
-      } else {
-        setIsPeerTyping(false);
-      }
-    }, 1000); // Check every second
+    const interval = setInterval(async () => {
+        const latestMessages = await api.fetchMessages(chatKey, peer.name);
+        // Only update state if there's a new message to avoid re-renders
+        if (latestMessages.length !== msgs.length) {
+            setMsgs(latestMessages);
+        }
+    }, 3000); // Poll every 3 seconds
 
     return () => clearInterval(interval);
-  }, [chatKey, peer.id]);
+  }, [chatKey, peer.name, msgs.length]);
 
 
-  // Effect to scroll to the bottom when new messages are added
   useEffect(scrollToBottom, [msgs]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!text.trim()) return;
     
-    // Create the new message object
     const newMessage: Message = { id: uid('m'), from: currentUser.name, text: text.trim(), ts: Date.now() };
-    const updatedMsgs = [...msgs, newMessage];
     
-    // Update state for immediate feedback in the current tab
-    setMsgs(updatedMsgs); 
-    
-    // Persist to localStorage to trigger the 'storage' event for other tabs
-    localStorage.setItem(chatKey, JSON.stringify(updatedMsgs));
-    
-    // Clear typing indicator
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    localStorage.removeItem(getTypingKey(chatKey, currentUser.id));
-
-    // Clear the input field
+    // Optimistic update
+    setMsgs([...msgs, newMessage]); 
     setText('');
-  };
 
-  const handleTyping = (newText: string) => {
-    setText(newText);
-    const typingKey = getTypingKey(chatKey, currentUser.id);
-
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
+    try {
+        await api.sendMessage(chatKey, newMessage);
+    } catch(e) {
+        console.error("Failed to send message", e);
+        // Revert on failure
+        setMsgs(msgs.filter(m => m.id !== newMessage.id));
+        alert("Failed to send message. Please try again.");
     }
-
-    localStorage.setItem(typingKey, Date.now().toString());
-
-    typingTimeoutRef.current = window.setTimeout(() => {
-      localStorage.removeItem(typingKey);
-    }, 2500); // Considered "stopped" after 2.5 seconds
   };
 
   return (
@@ -123,61 +77,52 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ peer, currentUser }) => {
         <div className="flex-grow">
           <h2 className="text-xl font-bold text-gray-900">Chat with {peer.name}</h2>
           <p className="text-sm text-gray-500">{peer.headline}</p>
-          {activityText && (
-            <div className="flex items-center mt-1.5">
-              {isOnline && <div className="w-2 h-2 bg-green-500 rounded-full mr-1.5 animate-pulse"></div>}
-              <p className={`text-xs ${isOnline ? 'text-green-600 font-semibold' : 'text-gray-500'}`}>{activityText}</p>
-            </div>
-          )}
         </div>
       </div>
       
       <div className="flex-1 p-4 overflow-y-auto bg-gray-50 space-y-4">
-        {msgs.map((item, index) => {
-            const isFromCurrentUser = item.from === currentUser.name;
-            const author = isFromCurrentUser ? currentUser : peer;
-            // Show avatar only for the first message in a block from the same user
-            const showAvatar = index === 0 || msgs[index - 1].from !== item.from;
-
-            return (
-              <div key={item.id} className={`flex items-end gap-2 ${isFromCurrentUser ? 'justify-end' : 'justify-start'}`}>
-                  {!isFromCurrentUser && (
-                      <div className="w-8">
-                          {showAvatar && <Avatar name={author.name} profilePictureUrl={author.profilePictureUrl} size="sm" />}
-                      </div>
-                  )}
-                  <div className={`max-w-xs lg:max-w-md p-3 rounded-lg ${isFromCurrentUser ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
-                    {showAvatar && <p className="font-bold text-sm mb-1">{item.from}</p>}
-                    <p>{item.text}</p>
-                    <p className={`text-xs mt-2 text-right ${isFromCurrentUser ? 'text-blue-100' : 'text-gray-500'}`}>{new Date(item.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
-                  </div>
-                   {isFromCurrentUser && (
-                      <div className="w-8">
-                         {showAvatar && <Avatar name={author.name} profilePictureUrl={author.profilePictureUrl} size="sm" />}
-                      </div>
-                  )}
-              </div>
-            );
-        })}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="px-4 h-6 text-sm text-gray-500 italic flex items-center">
-          {isPeerTyping && (
-             <div className="flex items-center space-x-1 text-gray-500">
-                <span>{peer.name} is typing</span>
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+        {isLoading ? (
+            <div className="flex justify-center items-center h-full">
+                 <svg className="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
             </div>
-          )}
+        ) : (
+            msgs.map((item, index) => {
+                const isFromCurrentUser = item.from === currentUser.name;
+                const author = isFromCurrentUser ? currentUser : peer;
+                const showAvatar = index === 0 || msgs[index - 1].from !== item.from;
+
+                return (
+                  <div key={item.id} className={`flex items-end gap-2 ${isFromCurrentUser ? 'justify-end' : 'justify-start'}`}>
+                      {!isFromCurrentUser && (
+                          <div className="w-8">
+                              {showAvatar && <Avatar name={author.name} profilePictureUrl={author.profilePictureUrl} size="sm" />}
+                          </div>
+                      )}
+                      <div className={`max-w-xs lg:max-w-md p-3 rounded-lg ${isFromCurrentUser ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
+                        {showAvatar && <p className="font-bold text-sm mb-1">{item.from}</p>}
+                        <p>{item.text}</p>
+                        <p className={`text-xs mt-2 text-right ${isFromCurrentUser ? 'text-blue-100' : 'text-gray-500'}`}>{new Date(item.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
+                      </div>
+                       {isFromCurrentUser && (
+                          <div className="w-8">
+                             {showAvatar && <Avatar name={author.name} profilePictureUrl={author.profilePictureUrl} size="sm" />}
+                          </div>
+                      )}
+                  </div>
+                );
+            })
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="p-4 border-t bg-white">
         <div className="flex items-center gap-4">
           <input
             value={text}
-            onChange={(e) => handleTyping(e.target.value)}
+            onChange={(e) => setText(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type your message..."
             className="flex-1 p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"

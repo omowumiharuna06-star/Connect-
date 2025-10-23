@@ -1,14 +1,13 @@
-
 import React, { useState } from 'react';
 import { User } from '../types';
 import { getIntroSuggestion } from '../services/geminiService';
 
 interface CoachScreenProps {
   user: User;
-  connections: User[];
+  people: User[];
 }
 
-const CoachScreen: React.FC<CoachScreenProps> = ({ user, connections }) => {
+const CoachScreen: React.FC<CoachScreenProps> = ({ user, people }) => {
   const [targetUserId, setTargetUserId] = useState<string>('');
   const [context, setContext] = useState('');
   const [reply, setReply] = useState('');
@@ -16,9 +15,9 @@ const CoachScreen: React.FC<CoachScreenProps> = ({ user, connections }) => {
   const [error, setError] = useState('');
 
   const handleGetSuggestion = async () => {
-    const targetUser = connections.find(c => c.id === targetUserId);
+    const targetUser = people.find(c => c.id === targetUserId);
     if (!targetUser) {
-        setError("Please select a connection.");
+        setError("Please select a person to message.");
         return;
     }
     
@@ -56,10 +55,10 @@ const CoachScreen: React.FC<CoachScreenProps> = ({ user, connections }) => {
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                disabled={connections.length === 0}
+                disabled={people.length <= 1}
             >
-                <option value="">{connections.length > 0 ? 'Select a connection...' : 'No connections available'}</option>
-                {connections.map(c => <option key={c.id} value={c.id}>{c.name} - {c.headline}</option>)}
+                <option value="">{people.length > 1 ? 'Select a person...' : 'No other users available'}</option>
+                {people.filter(p => p.id !== user.id).map(p => <option key={p.id} value={p.id}>{p.name} - {p.headline}</option>)}
             </select>
         </div>
 
